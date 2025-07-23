@@ -33,6 +33,9 @@ python app.py
 
 The server will start running on: **http://localhost:5000**
 
+### Run Esp32 End node code
+```
+
 ## 🌐 Web Dashboard
 
 The HTML dashboard provides:
