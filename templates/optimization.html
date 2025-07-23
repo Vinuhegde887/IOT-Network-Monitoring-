@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unified Network Optimization Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        /* (All your CSS remains unchanged) */
+        .network-container { border: 1px solid #ddd; border-radius: 5px; height: 500px; margin-bottom: 20px; position: relative; overflow: hidden; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);}
+        .message-log { height: 200px; overflow-y: auto; border: 1px solid #efdfdf; border-radius: 5px; padding: 10px; background-color: #f8f9fa; font-family: monospace; font-size: 0.9rem;}
+        .card { margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease;}
+        .card:hover { transform: translateY(-2px); box-shadow: 0 8px 15px rgba(0,0,0,0.2);}
+        .btn-action { margin-right: 5px; margin-bottom: 5px;}
+        .optimization-panel { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; padding: 15px; margin: 10px 0;}
+        .metric-card { background: rgba(236, 234, 234, 0.1); border-radius: 8px; padding: 10px; margin: 5px 0; backdrop-filter: blur(10px);}
+        .node circle { stroke-width: 2px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); transition: all 0.3s ease;}
+        .node.router circle { fill: #1f77b4; }
+        .node.edge circle { fill: #ff0e7e; }
+        .node.device circle { fill: #9467bd; }
+        .node.subnet circle { fill: #2ca02c; }
+        .node.failed circle { fill: #d62728; animation: pulse 1s infinite;}
+        .node.active circle { stroke: #ff7f0e; stroke-width: 4px; filter: drop-shadow(0 0 10px #ff7f0e);}
+        .node.critical circle { stroke: #dc3545; stroke-width: 3px; fill: #ffc107; animation: glow 2s ease-in-out infinite alternate;}
+        .link { stroke: #999; stroke-opacity: 0.8; transition: all 0.3s ease;}
+        .link.active { stroke: #ff7f0e; stroke-width: 4px; filter: drop-shadow(0 0 5px #ff7f0e);}
+        .link.optimized { stroke: #28a745; stroke-width: 5px; stroke-dasharray: 5,5; animation: dash 2s linear infinite; filter: drop-shadow(0 0 8px #28a745);}
+        .link.comparison { stroke: #dc3545; stroke-width: 3px; opacity: 0.7; stroke-dasharray: 10,5;}
+        .link.bottleneck { stroke: #ffc107; stroke-width: 6px; animation: pulse 1.5s ease-in-out infinite;}
+        .packet { fill: #ff7f0e; stroke: none; filter: drop-shadow(0 0 5px #ff7f0e);}
+        .packet.optimized { fill: #28a745; filter: drop-shadow(0 0 5px #28a745);}
+        .node text { font-family: sans-serif; font-size: 12px; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);}
+        .path-label { font-size: 10px; fill: white; text-anchor: middle; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);}
+        .legend { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 5px; font-size: 12px; backdrop-filter: blur(10px);}
+        .legend-item { display: flex; align-items: center; margin: 3px 0;}
+        .legend-color { width: 20px; height: 3px; margin-right: 8px; border-radius: 2px;}
+        @keyframes dash { to { stroke-dashoffset: -10; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes glow { from { filter: drop-shadow(0 0 5px currentColor); } to { filter: drop-shadow(0 0 15px currentColor); } }
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000;}
+        .optimization-toggle { position: absolute; top: 10px; left: 10px; z-index: 100;}
+    </style>
+</head>
+<body>
+    <!-- (HTML remains unchanged, only JS is fixed) -->
+    <div class="container-fluid mt-4">
+          <h1 class="mb-4 text-center">Enhanced Network Optimization Dashboard</h1>
+        
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <span>Network Topology Visualization</span>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <input type="radio" class="btn-check" name="viewMode" id="normalView" checked>
+                            <label class="btn btn-outline-light" for="normalView">Normal</label>
+                            <input type="radio" class="btn-check" name="viewMode" id="optimizedView">
+                            <label class="btn btn-outline-light" for="optimizedView">Optimized</label>
+                            <input type="radio" class="btn-check" name="viewMode" id="comparisonView">
+                            <label class="btn btn-outline-light" for="comparisonView">Compare</label>
+                        </div>
+                    </div>
+                    <div class="card-body p-0 position-relative">
+                        <div id="network-visualization" class="network-container"></div>
+                        <div class="legend">
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #ff7f0e;"></div>
+                                <span>Active Path</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #28a745; animation: dash 2s linear infinite; background-image: repeating-linear-gradient(90deg, transparent, transparent 5px, white 5px, white 10px);"></div>
+                                <span>Optimized Path</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #dc3545; opacity: 0.7;"></div>
+                                <span>Original Path</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #ffc107;"></div>
+                                <span>Bottleneck</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        Simulation Information
+                    </div>
+                    <div class="card-body">
+                        <div id="simulationInfo">
+                            <p class="text-muted">Select a node or start a simulation to see information.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        Optimization Metrics
+                    </div>
+                    <div class="card-body">
+                        <div id="optimizationMetrics">
+                            <p class="text-muted">Run optimization to see performance metrics.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        Message Log
+                    </div>
+                    <div class="card-body p-2">
+                        <div id="message-log" class="message-log"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        Advanced Routing Simulation
+                    </div>
+                    <div class="card-body">
+                        <form id="routingSimForm">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Start Node</label>
+                                        <select class="form-select" id="startNode" required></select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">End Node</label>
+                                        <select class="form-select" id="endNode" required></select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Algorithm</label>
+                                        <select class="form-select" id="routingAlgo">
+                                            <option value="dijkstra">Dijkstra (Shortest)</option>
+                                            <option value="bottleneck">Distance Vector</option>
+                                            <option value="resilience">Link state</option>
+                                            <option value="optimized">Smart Optimization</option>
+                                            <option value="load_balanced">Load Balanced</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="showComparison">
+                                        <label class="form-check-label" for="showComparison">
+                                            Show Path Comparison
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="animatePackets" checked>
+                                        <label class="form-check-label" for="animatePackets">
+                                            Animate Packets
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary mt-3">Simulate Routing</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">
+                        Network Failure & Recovery
+                    </div>
+                    <div class="card-body">
+                        <form id="failureSimForm">
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <div class="mb-3">
+                                        <label class="form-label">Failure Scenario</label>
+                                        <select class="form-select" id="failureScenario">
+                                            <option value="random">Random Node Failure</option>
+                                            <option value="targeted">Critical Node Failure</option>
+                                            <option value="cascade">Cascade Failure</option>
+                                            <option value="link">Random Link Failure</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-warning mb-3">Simulate Failure</button>
+                                </div>
+                            </div>
+                        </form>
+                        <button id="autoRecover" class="btn btn-success btn-sm">Auto-Recover Network</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-gradient text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Advanced Network Analysis & Optimization</span>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-light btn-sm" id="toggleRealtime">
+                                    Real-time Analysis
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap">
+                            <button id="optimizeRouting" class="btn btn-info btn-action">
+                                🚀 Smart Route Optimization
+                            </button>
+                            <button id="analyzeResilience" class="btn btn-success btn-action">
+                                🛡️ Resilience Analysis
+                            </button>
+                            <button id="findBottlenecks" class="btn btn-warning btn-action">
+                                ⚠️ Detect Bottlenecks
+                            </button>
+                            <button id="loadBalance" class="btn btn-secondary btn-action">
+                                ⚖️ Load Balancing
+                            </button>
+                            <button id="resetNetwork" class="btn btn-outline-danger btn-action">
+                                🔄 Reset Network
+                            </button>
+                        </div>
+                        <div id="simulationResults" class="mt-3">
+                            <!-- Simulation results will appear here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="toast-container"></div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // --- Network data ---
+       const mockTopologyData = {
+    nodes: [
+        // Core Routers
+        ['R1', { type: 'core' }],
+        ['R2', { type: 'core' }],
+        // Aggregation/Distribution Routers
+        ['R3', { type: 'router' }],
+        ['R4', { type: 'router' }],
+        ['R5', { type: 'router' }],
+        // Edge Routers
+        ['EdgeR1', { type: 'edge' }],
+        ['EdgeR2', { type: 'edge' }],
+        ['EdgeR3', { type: 'edge' }],
+        ['EdgeR4', { type: 'edge' }],
+        // Subnets
+        ['S1', { type: 'subnet' }],
+        ['S2', { type: 'subnet' }],
+        ['S3', { type: 'subnet' }],
+        ['S4', { type: 'subnet' }],
+        ['S5', { type: 'subnet' }],
+        ['S6', { type: 'subnet' }],
+        // End Devices
+        ['PC1', { type: 'device' }],
+        ['PC2', { type: 'device' }],
+        ['PC3', { type: 'device' }],
+        ['PC4', { type: 'device' }],
+        ['Printer1', { type: 'device' }],
+        ['IoT1', { type: 'device' }]
+    ],
+    edges: [
+        // Core backbone (redundant)
+        ['R1', 'R2', { weight: 1 }],
+        // Core to Distribution (full mesh)
+        ['R1', 'R3', { weight: 2 }],
+        ['R1', 'R4', { weight: 2 }],
+        ['R1', 'R5', { weight: 2 }],
+        ['R2', 'R3', { weight: 2 }],
+        ['R2', 'R4', { weight: 2 }],
+        ['R2', 'R5', { weight: 2 }],
+        // Distribution interconnects (ring)
+        ['R3', 'R4', { weight: 3 }],
+        ['R4', 'R5', { weight: 3 }],
+        ['R5', 'R3', { weight: 3 }],
+        // Distribution to Edge Routers
+        ['R3', 'EdgeR1', { weight: 2 }],
+        ['R3', 'EdgeR2', { weight: 2 }],
+        ['R4', 'EdgeR2', { weight: 2 }],
+        ['R4', 'EdgeR3', { weight: 2 }],
+        ['R5', 'EdgeR3', { weight: 2 }],
+        ['R5', 'EdgeR4', { weight: 2 }],
+        // Edge redundancy
+        ['EdgeR1', 'EdgeR2', { weight: 4 }],
+        ['EdgeR2', 'EdgeR3', { weight: 4 }],
+        ['EdgeR3', 'EdgeR4', { weight: 4 }],
+        // Edge to Subnets
+        ['EdgeR1', 'S1', { weight: 1 }],
+        ['EdgeR1', 'S2', { weight: 1 }],
+        ['EdgeR2', 'S3', { weight: 1 }],
+        ['EdgeR2', 'S4', { weight: 1 }],
+        ['EdgeR3', 'S5', { weight: 1 }],
+        ['EdgeR4', 'S6', { weight: 1 }],
+        // End devices on subnets
+        ['S1', 'PC1', { weight: 1 }],
+        ['S2', 'PC2', { weight: 1 }],
+        ['S3', 'PC3', { weight: 1 }],
+        ['S4', 'PC4', { weight: 1 }],
+        ['S5', 'Printer1', { weight: 1 }],
+        ['S6', 'IoT1', { weight: 1 }]
+    ]
+};
+        // --- Visualization setup ---
+        const width = document.getElementById('network-visualization').clientWidth;
+        const height = document.getElementById('network-visualization').clientHeight;
+        const svg = d3.select('#network-visualization').append('svg').attr('width', width).attr('height', height);
+        const container = svg.append('g');
+        svg.call(d3.zoom().scaleExtent([0.5, 5]).on('zoom', (event) => { container.attr('transform', event.transform); }));
+
+        let nodes = [], links = [], simulation, currentPath = null, optimizedPath = null, originalPath = null;
+        let linkElements = null, nodeElements = null;
+
+        processTopologyData(mockTopologyData);
+        populateNodeDropdowns();
+        createForceDirectedGraph();
+        logMessage('Network topology loaded successfully.');
+
+        function processTopologyData(data) {
+            nodes = data.nodes.map(([name, attributes]) => ({
+                id: name,
+                type: attributes.type || 'unknown',
+                status: 'normal',
+                x: Math.random() * width,
+                y: Math.random() * height
+            }));
+            links = data.edges.map(([source, target, attributes]) => ({
+                source, target,
+                weight: attributes.weight || 1,
+                status: 'normal'
+            }));
+        }
+
+        function populateNodeDropdowns() {
+            const startNodeSelect = document.getElementById('startNode');
+            const endNodeSelect = document.getElementById('endNode');
+            startNodeSelect.innerHTML = '';
+            endNodeSelect.innerHTML = '';
+            nodes.forEach(node => {
+                const o1 = document.createElement('option');
+                o1.value = node.id; o1.textContent = node.id; startNodeSelect.appendChild(o1);
+                const o2 = document.createElement('option');
+                o2.value = node.id; o2.textContent = node.id; endNodeSelect.appendChild(o2);
+            });
+            if (nodes.length >= 2) {
+                startNodeSelect.value = nodes[0].id;
+                endNodeSelect.value = nodes[nodes.length - 1].id;
+            }
+        }
+
+        function createForceDirectedGraph() {
+            simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink().id(d => d.id).links(links).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .on('tick', ticked);
+
+            // Links
+            linkElements = container.append('g').attr('class', 'links')
+                .selectAll('line').data(links).enter()
+                .append('line').attr('class', 'link')
+                .attr('stroke-width', d => Math.sqrt(d.weight));
+
+            // Nodes
+            nodeElements = container.append('g').attr('class', 'nodes')
+                .selectAll('.node').data(nodes).enter()
+                .append('g').attr('class', d => `node ${d.type}`)
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+
+            nodeElements.append('circle').attr('r', 10).on('click', nodeClicked);
+            nodeElements.append('text').attr('dx', 15).attr('dy', 5).text(d => d.id);
+
+            container.append('g').attr('class', 'packets');
+
+            function ticked() {
+                linkElements
+                    .attr('x1', d => typeof d.source === 'object' ? d.source.x : nodes.find(n=>n.id===d.source).x)
+                    .attr('y1', d => typeof d.source === 'object' ? d.source.y : nodes.find(n=>n.id===d.source).y)
+                    .attr('x2', d => typeof d.target === 'object' ? d.target.x : nodes.find(n=>n.id===d.target).x)
+                    .attr('y2', d => typeof d.target === 'object' ? d.target.y : nodes.find(n=>n.id===d.target).y);
+
+                nodeElements.attr('transform', d => `translate(${d.x},${d.y})`);
+            }
+
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x; d.fy = d.y;
+            }
+            function dragged(event, d) {
+                d.fx = event.x; d.fy = event.y;
+            }
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null; d.fy = null;
+            }
+            function nodeClicked(event, d) {
+                document.getElementById('simulationInfo').innerHTML = `<h5>${d.id}</h5><p>Type: ${d.type}</p><p>Status: ${d.status}</p>`;
+                logMessage(`Selected node: ${d.id}`);
+            }
+        }
+
+        function findNodeById(id) { return nodes.find(n => n.id === id); }
+        function findLink(source, target) {
+            return links.find(link => {
+                const s = typeof link.source === 'object' ? link.source.id : link.source;
+                const t = typeof link.target === 'object' ? link.target.id : link.target;
+                return (s === source && t === target) || (s === target && t === source);
+            });
+        }
+
+        // --- Path Algorithms ---
+        function findShortestPath(start, end) {
+            // Dijkstra's
+            const graph = {};
+            nodes.forEach(node => { graph[node.id] = {}; });
+            links.forEach(link => {
+                const s = typeof link.source === 'object' ? link.source.id : link.source;
+                const t = typeof link.target === 'object' ? link.target.id : link.target;
+                if (findNodeById(s).status !== 'failed' && findNodeById(t).status !== 'failed') {
+                    graph[s][t] = link.weight;
+                    graph[t][s] = link.weight;
+                }
+            });
+
+            const queue = [], distances = {}, previous = {}, path = [];
+            let smallest;
+            Object.keys(graph).forEach(vertex => {
+                distances[vertex] = vertex === start ? 0 : Infinity;
+                previous[vertex] = null;
+                queue.push([vertex, distances[vertex]]);
+            });
+            while (queue.length) {
+                queue.sort((a, b) => a[1] - b[1]);
+                smallest = queue.shift()[0];
+                if (smallest === end) {
+                    let n = end;
+                    while (n) { path.unshift(n); n = previous[n]; }
+                    break;
+                }
+                if (smallest || distances[smallest] !== Infinity) {
+                    for (let neighbor in graph[smallest]) {
+                        let alt = distances[smallest] + graph[smallest][neighbor];
+                        if (alt < distances[neighbor]) {
+                            distances[neighbor] = alt;
+                            previous[neighbor] = smallest;
+                            for (let i = 0; i < queue.length; i++) {
+                                if (queue[i][0] === neighbor) { queue[i][1] = alt; break; }
+                            }
+                        }
+                    }
+                }
+            }
+            return { path, total_cost: distances[end] };
+        }
+        // Optimized path - favor less used edges (simulate lower weight)
+        function findOptimizedPath(start, end) {
+            // Simulate: use a modified Dijkstra's that prefers edges not used in currentPath
+            const usedEdges = new Set();
+            if (currentPath && currentPath.length > 1) {
+                for (let i = 0; i < currentPath.length - 1; i++) {
+                    usedEdges.add(`${currentPath[i]}-${currentPath[i + 1]}`);
+                    usedEdges.add(`${currentPath[i + 1]}-${currentPath[i]}`);
+                }
+            }
+            const graph = {};
+            nodes.forEach(node => { graph[node.id] = {}; });
+            links.forEach(link => {
+                const s = typeof link.source === 'object' ? link.source.id : link.source;
+                const t = typeof link.target === 'object' ? link.target.id : link.target;
+                if (findNodeById(s).status !== 'failed' && findNodeById(t).status !== 'failed') {
+                    let weight = link.weight;
+                    if (!usedEdges.has(`${s}-${t}`)) weight = Math.max(1, weight - 1); // prefer unused
+                    else weight = weight + 1; // penalize used
+                    graph[s][t] = weight;
+                    graph[t][s] = weight;
+                }
+            });
+
+            // Same as Dijkstra's
+            const queue = [], distances = {}, previous = {}, path = [];
+            let smallest;
+            Object.keys(graph).forEach(vertex => {
+                distances[vertex] = vertex === start ? 0 : Infinity;
+                previous[vertex] = null;
+                queue.push([vertex, distances[vertex]]);
+            });
+            while (queue.length) {
+                queue.sort((a, b) => a[1] - b[1]);
+                smallest = queue.shift()[0];
+                if (smallest === end) {
+                    let n = end;
+                    while (n) { path.unshift(n); n = previous[n]; }
+                    break;
+                }
+                if (smallest || distances[smallest] !== Infinity) {
+                    for (let neighbor in graph[smallest]) {
+                        let alt = distances[smallest] + graph[smallest][neighbor];
+                        if (alt < distances[neighbor]) {
+                            distances[neighbor] = alt;
+                            previous[neighbor] = smallest;
+                            for (let i = 0; i < queue.length; i++) {
+                                if (queue[i][0] === neighbor) { queue[i][1] = alt; break; }
+                            }
+                        }
+                    }
+                }
+            }
+            return { path, total_cost: distances[end] };
+        }
+
+        function findLoadBalancedPath(start, end) {
+            // Simulate: prefer "balanced" distribution; use random weights
+            const graph = {};
+            nodes.forEach(node => { graph[node.id] = {}; });
+            links.forEach(link => {
+                const s = typeof link.source === 'object' ? link.source.id : link.source;
+                const t = typeof link.target === 'object' ? link.target.id : link.target;
+                if (findNodeById(s).status !== 'failed' && findNodeById(t).status !== 'failed') {
+                    let weight = link.weight + Math.random(); // add randomness
+                    graph[s][t] = weight;
+                    graph[t][s] = weight;
+                }
+            });
+
+            // Same as Dijkstra's
+            const queue = [], distances = {}, previous = {}, path = [];
+            let smallest;
+            Object.keys(graph).forEach(vertex => {
+                distances[vertex] = vertex === start ? 0 : Infinity;
+                previous[vertex] = null;
+                queue.push([vertex, distances[vertex]]);
+            });
+            while (queue.length) {
+                queue.sort((a, b) => a[1] - b[1]);
+                smallest = queue.shift()[0];
+                if (smallest === end) {
+                    let n = end;
+                    while (n) { path.unshift(n); n = previous[n]; }
+                    break;
+                }
+                if (smallest || distances[smallest] !== Infinity) {
+                    for (let neighbor in graph[smallest]) {
+                        let alt = distances[smallest] + graph[smallest][neighbor];
+                        if (alt < distances[neighbor]) {
+                            distances[neighbor] = alt;
+                            previous[neighbor] = smallest;
+                            for (let i = 0; i < queue.length; i++) {
+                                if (queue[i][0] === neighbor) { queue[i][1] = alt; break; }
+                            }
+                        }
+                    }
+                }
+            }
+            return { path, total_cost: distances[end] };
+        }
+        // Bellman-Ford (Distance Vector)
+function bellmanFordPath(graph, start, end) {
+    const distances = {};
+    const previous = {};
+    Object.keys(graph).forEach(v => {
+        distances[v] = Infinity;
+        previous[v] = null;
+    });
+    distances[start] = 0;
+
+    // Flatten all edges
+    const edges = [];
+    for (let u in graph) {
+        for (let v in graph[u]) {
+            edges.push({from: u, to: v, weight: graph[u][v]});
+        }
+    }
+
+    // Relax edges |V|-1 times
+    const V = Object.keys(graph).length;
+    for (let i = 0; i < V - 1; i++) {
+        for (let edge of edges) {
+            if (distances[edge.from] + edge.weight < distances[edge.to]) {
+                distances[edge.to] = distances[edge.from] + edge.weight;
+                previous[edge.to] = edge.from;
+            }
+        }
+    }
+
+    // Build path
+    const path = [];
+    let node = end;
+    while (node) {
+        path.unshift(node);
+        node = previous[node];
+    }
+    return { path, cost: distances[end], algorithm: 'distance_vector' };
+}
+
+// Link State (just Dijkstra, but you can annotate it as "link_state")
+function linkStatePath(graph, start, end) {
+    // You can just use your dijkstraPath implementation, but annotate as link_state
+    const dijkstraRes = dijkstraPath(graph, start, end);
+    return { path: dijkstraRes.path, cost: dijkstraRes.cost, algorithm: 'link_state' };
+}
+
+        // --- Visualization ---
+        function visualizePath(path, className) {
+            linkElements.classed('active optimized comparison', false);
+            nodeElements.classed('active optimized comparison', false);
+            if (!path || path.length < 2) return;
+            for (let i = 0; i < path.length - 1; i++) {
+                const s = path[i], t = path[i + 1];
+                linkElements.classed(className, d => {
+                    const ds = typeof d.source === 'object' ? d.source.id : d.source;
+                    const dt = typeof d.target === 'object' ? d.target.id : d.target;
+                    return (ds === s && dt === t) || (ds === t && dt === s);
+                });
+            }
+            nodeElements.classed(className, d => path.includes(d.id));
+        }
+        function resetVisualization() {
+            linkElements.classed('active optimized comparison bottleneck', false);
+            nodeElements.classed('active optimized comparison critical failed', false);
+        }
+
+        function simulatePacketTransmission(path, className = 'packet') {
+            container.select('.packets').selectAll('circle').remove();
+            if (!path || path.length < 2) return;
+            let idx = 0;
+            function nextHop() {
+                if (idx >= path.length - 1) return;
+                const s = findNodeById(path[idx]);
+                const t = findNodeById(path[idx + 1]);
+                if (!s || !t) return;
+                const packet = container.select('.packets').append('circle').attr('class', className).attr('r', 5)
+                    .attr('cx', s.x).attr('cy', s.y);
+                packet.transition().duration(800).attr('cx', t.x).attr('cy', t.y)
+                    .on('end', function() { d3.select(this).remove(); idx++; nextHop(); });
+            }
+            nextHop();
+        }
+
+        // --- Optimization metrics ---
+        function showOptimizationMetrics(original, optimized) {
+            const metricsDiv = document.getElementById('optimizationMetrics');
+            if (!original || !optimized) {
+                metricsDiv.innerHTML = `<p class="text-muted">Run optimization to see performance metrics.</p>`;
+                return;
+            }
+            const origHops = original.path.length - 1, optHops = optimized.path.length - 1;
+            const improvement = origHops > 0 ? ((origHops - optHops) / origHops) * 100 : 0;
+            metricsDiv.innerHTML = `
+                <div class="metric-card">
+                    <h6>Optimization Metrics</h6>
+                    <div>Original Hops: ${origHops}</div>
+                    <div>Optimized Hops: ${optHops}</div>
+                    <div>Improvement: ${improvement.toFixed(1)}%</div>
+                    <div class="progress" style="height:8px;">
+                        <div class="progress-bar bg-success" style="width:${Math.abs(improvement)}%"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- Optimization & Analysis Buttons ---
+        document.getElementById('optimizeRouting').addEventListener('click', function() {
+            if (!currentPath || currentPath.length < 2) {
+                showToast('Please run a routing simulation first!', 'warning');
+                return;
+            }
+            const start = currentPath[0], end = currentPath[currentPath.length - 1];
+            const origPath = findShortestPath(start, end);
+            const optPath = findOptimizedPath(start, end);
+            originalPath = origPath.path;
+            optimizedPath = optPath.path;
+            resetVisualization();
+            visualizePath(originalPath, 'comparison');
+            visualizePath(optimizedPath, 'optimized');
+            showOptimizationMetrics(origPath, optPath);
+            logMessage(`Optimized path: ${optimizedPath.join(' → ')}`);
+            showToast('Route optimization complete!', 'success');
+        });
+
+        // Compare View (show both original and optimized paths)
+        document.getElementById('comparisonView').addEventListener('change', function() {
+            if (this.checked && originalPath && optimizedPath) {
+                resetVisualization();
+                visualizePath(originalPath, 'comparison');
+                visualizePath(optimizedPath, 'optimized');
+            }
+        });
+        document.getElementById('optimizedView').addEventListener('change', function() {
+            if (this.checked && optimizedPath) {
+                resetVisualization();
+                visualizePath(optimizedPath, 'optimized');
+            }
+        });
+        document.getElementById('normalView').addEventListener('change', function() {
+            if (this.checked && currentPath) {
+                resetVisualization();
+                visualizePath(currentPath, 'active');
+            }
+        });
+
+        // Bottleneck Detection (highest betweenness)
+        document.getElementById('findBottlenecks').addEventListener('click', function() {
+            const betweenness = calculateEdgeBetweenness();
+            const sortedEdges = Object.entries(betweenness).sort((a, b) => b[1] - a[1]);
+            resetVisualization();
+            // Highlight top 2 bottlenecks
+            let bottleneckLinks = sortedEdges.slice(0, 2).map(([edge]) => edge);
+            linkElements.classed('bottleneck', d => {
+                const s = typeof d.source === 'object' ? d.source.id : d.source;
+                const t = typeof d.target === 'object' ? d.target.id : d.target;
+                return bottleneckLinks.includes(`${s}-${t}`) || bottleneckLinks.includes(`${t}-${s}`);
+            });
+            document.getElementById('simulationResults').innerHTML = `
+                <div class="optimization-panel">
+                    <h5>⚠️ Detected Bottlenecks</h5>
+                    <div class="metric-card">${bottleneckLinks.map(e => `<div>${e.replace('-', ' ↔ ')}</div>`).join('')}</div>
+                </div>
+            `;
+            logMessage('Bottleneck analysis complete.');
+            showToast('Bottleneck(s) detected!', 'warning');
+        });
+
+        // Load Balancing (randomize link weights and re-calculate)
+        document.getElementById('loadBalance').addEventListener('click', function() {
+            links.forEach(link => { link.weight = Math.max(1, Math.round(Math.random() * 3 + 1)); });
+            linkElements.attr('stroke-width', d => Math.sqrt(d.weight));
+            logMessage('Load balancing performed (link weights randomized).');
+            showToast('Load balanced (simulated).', 'info');
+            // Optionally, re-run the last path
+            if (currentPath && currentPath.length > 1) {
+                document.getElementById('routingSimForm').dispatchEvent(new Event('submit', {cancelable: true, bubbles:true}));
+            }
+        });
+
+        // Resilience: highlight top central nodes
+        document.getElementById('analyzeResilience').addEventListener('click', function() {
+            const centrality = calculateCentrality();
+            const sortedNodes = Object.entries(centrality).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([n]) => n);
+            resetVisualization();
+            nodeElements.classed('critical', d => sortedNodes.includes(d.id));
+            document.getElementById('simulationResults').innerHTML = `
+                <div class="optimization-panel">
+                    <h5>🛡️ Most Central Nodes</h5>
+                    <div class="metric-card">${sortedNodes.map(n => `<div>${n}</div>`).join('')}</div>
+                </div>
+            `;
+            logMessage('Resilience analysis complete.');
+            showToast('Resilience nodes highlighted.', 'info');
+        });
+
+        // Reset
+        document.getElementById('resetNetwork').addEventListener('click', function() {
+            resetVisualization();
+            currentPath = optimizedPath = originalPath = null;
+            document.getElementById('simulationResults').innerHTML = '';
+            document.getElementById('optimizationMetrics').innerHTML = '<p class="text-muted">Run optimization to see performance metrics.</p>';
+            logMessage('Network reset.');
+            showToast('Network reset.', 'info');
+        });
+
+        // Routing Simulation Form
+        document.getElementById('routingSimForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const startNode = document.getElementById('startNode').value;
+            const endNode = document.getElementById('endNode').value;
+            const routingAlgo = document.getElementById('routingAlgo').value;
+            let result;
+            if (startNode === endNode) {
+                showToast('Please select different start and end nodes.', 'warning');
+                return;
+            }
+            if (routingAlgo === 'dijkstra') {
+                result = findShortestPath(startNode, endNode);
+            } else if (routingAlgo === 'optimized') {
+                currentPath = findShortestPath(startNode, endNode).path;
+                result = findOptimizedPath(startNode, endNode);
+            } else if (routingAlgo === 'load_balanced') {
+                result = findLoadBalancedPath(startNode, endNode);
+
+            }else if(routingAlgo===bellmanFordPath(startNode, endNode)){
+                result = bellmanFordPath(graph, startNode, endNode);
+            }else if(routingAlgo===linkStatePath(graph, startNode, endNode)){
+                result = linkStatePath(graph, startNode, endNode);
+            }
+            currentPath = result.path;
+            resetVisualization();
+            visualizePath(currentPath, routingAlgo === 'optimized' ? 'optimized' : 'active');
+            document.getElementById('simulationInfo').innerHTML = `
+                <h5>Routing Simulation</h5>
+                <p>Algorithm: ${routingAlgo}</p>
+                <p>Start: ${startNode}</p>
+                <p>End: ${endNode}</p>
+                <p>Path Cost: ${result.total_cost}</p>
+            `;
+            document.getElementById('simulationResults').innerHTML = `
+                <div class="alert alert-success">
+                    <h5>Routing Results</h5>
+                    <p>Found path from ${startNode} to ${endNode} with cost ${result.total_cost}</p>
+                    <p><strong>Path:</strong> ${result.path.join(' → ')}</p>
+                </div>
+            `;
+            simulatePacketTransmission(result.path, routingAlgo === 'optimized' ? 'packet optimized' : 'packet');
+            logMessage(`Routing simulation (${routingAlgo}) from ${startNode} to ${endNode}: ${result.path.join(' → ')}`);
+        });
+
+        // Failure Simulation
+        document.getElementById('failureSimForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const failureScenario = document.getElementById('failureScenario').value;
+            let failedNodes = [];
+            if (failureScenario === 'random') {
+                const routerNodes = nodes.filter(node => node.type === 'router');
+                const randomIndex = Math.floor(Math.random() * routerNodes.length);
+                failedNodes = [routerNodes[randomIndex].id];
+            } else if (failureScenario === 'targeted') {
+                const centrality = calculateCentrality();
+                const mostCentral = Object.entries(centrality).sort((a, b) => b[1] - a[1])[0][0];
+                failedNodes = [mostCentral];
+            } else if (failureScenario === 'cascade') {
+                const routerNodes = nodes.filter(node => node.type === 'router');
+                const randomIndex = Math.floor(Math.random() * routerNodes.length);
+                const start = routerNodes[randomIndex].id;
+                failedNodes = [start];
+                // Cascade: also fail neighbors (simulate)
+                links.forEach(link => {
+                    const s = typeof link.source === 'object' ? link.source.id : link.source;
+                    const t = typeof link.target === 'object' ? link.target.id : link.target;
+                    if (s === start || t === start) {
+                        const neighbor = s === start ? t : s;
+                        if (!failedNodes.includes(neighbor)) failedNodes.push(neighbor);
+                    }
+                });
+            } else if (failureScenario === 'link') {
+                // Random link failure
+                const randomLink = links[Math.floor(Math.random() * links.length)];
+                randomLink.status = 'failed';
+                linkElements.classed('failed', d => d === randomLink);
+                logMessage(`Failed link: ${randomLink.source.id || randomLink.source} - ${randomLink.target.id || randomLink.target}`);
+                showToast('A link has failed!', 'danger');
+                return;
+            }
+            failedNodes.forEach(nodeId => { findNodeById(nodeId).status = 'failed'; });
+            nodeElements.classed('failed', d => d.status === 'failed');
+            logMessage(`Failed nodes: ${failedNodes.join(', ')}`);
+            showToast('Node failure simulated.', 'danger');
+            // Connected components after failure
+            const components = findConnectedComponents();
+            document.getElementById('simulationResults').innerHTML = `
+                <div class="alert alert-warning">
+                    <h5>Network Failure Results</h5>
+                    <p>Failed Nodes: ${failedNodes.join(', ')}</p>
+                    <p><strong>Connected Components:</strong> ${components.map(c => c.join(' , ')).join(' | ')}</p>
+                </div>
+            `;
+        });
+
+        // --- Centrality ---
+        function calculateCentrality() {
+            const centrality = {};
+            nodes.forEach(node => {
+                const connections = links.filter(link => {
+                    const s = typeof link.source === 'object' ? link.source.id : link.source;
+                    const t = typeof link.target === 'object' ? link.target.id : link.target;
+                    return (s === node.id || t === node.id);
+                }).length;
+                centrality[node.id] = connections / (nodes.length - 1);
+            });
+            return centrality;
+        }
+        function calculateEdgeBetweenness() {
+            const betweenness = {};
+            links.forEach(link => {
+                const s = typeof link.source === 'object' ? link.source.id : link.source;
+                const t = typeof link.target === 'object' ? link.target.id : link.target;
+                betweenness[`${s}-${t}`] = 0;
+            });
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    const start = nodes[i].id, end = nodes[j].id;
+                    const shortestPath = findShortestPath(start, end);
+                    for (let k = 0; k < shortestPath.path.length - 1; k++) {
+                        const s = shortestPath.path[k], t = shortestPath.path[k + 1];
+                        if (betweenness[`${s}-${t}`] !== undefined) betweenness[`${s}-${t}`]++;
+                        else if (betweenness[`${t}-${s}`] !== undefined) betweenness[`${t}-${s}`]++;
+                    }
+                }
+            }
+            const totalPaths = (nodes.length * (nodes.length - 1)) / 2;
+            for (let key in betweenness) betweenness[key] /= totalPaths;
+            return betweenness;
+        }
+
+        // --- Connected components ---
+        function findConnectedComponents() {
+            const visited = {};
+            const components = [];
+            function dfs(nodeId, component) {
+                visited[nodeId] = true; component.push(nodeId);
+                links.forEach(link => {
+                    const s = typeof link.source === 'object' ? link.source.id : link.source;
+                    const t = typeof link.target === 'object' ? link.target.id : link.target;
+                    if (s === nodeId && !visited[t] && findNodeById(t).status !== 'failed') dfs(t, component);
+                    if (t === nodeId && !visited[s] && findNodeById(s).status !== 'failed') dfs(s, component);
+                });
+            }
+            nodes.forEach(node => {
+                if (node.status !== 'failed' && !visited[node.id]) {
+                    const component = [];
+                    dfs(node.id, component);
+                    components.push(component);
+                }
+            });
+            return components;
+        }
+
+        // --- Toast/Log helpers ---
+        function logMessage(message) {
+            const messageLog = document.getElementById('message-log');
+            const timestamp = new Date().toLocaleTimeString();
+            messageLog.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            messageLog.scrollTop = messageLog.scrollHeight;
+        }
+        function showToast(message, type = 'info') {
+            const toastContainer = document.querySelector('.toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast align-items-center text-white bg-${type} border-0`;
+            toast.setAttribute('role', 'alert');
+            toast.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+            toastContainer.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        }
+    });
+    </script>
+</body>
+</html>
